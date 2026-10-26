@@ -1,0 +1,157 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>body{margin:0;background:#111;display:flex;gap:16px;padding:16px;flex-wrap:wrap}canvas{width:480px;height:800px}</style>
+</head><body>
+<canvas id="nes" width="240" height="400" style="image-rendering:pixelated"></canvas>
+<canvas id="neon" width="480" height="800"></canvas>
+<canvas id="doodle" width="480" height="800"></canvas>
+<canvas id="toy" width="480" height="800"></canvas>
+<script>
+// One shared scene layout (world units 240x400), drawn in 4 different art styles.
+const SC = {
+  road: [100, 136], river: [150, 188], bridge: [100, 136],
+  trees: [[38, 92], [205, 250], [28, 340], [210, 120]],
+  wall: [150, 118, 44, 8], turret: [196, 70], tank: [58, 232], prison: [190, 330],
+  pows: [[168, 362], [180, 370], [158, 372]], heli: [48, 40],
+  soldiers: [[88, 64], [150, 46], [150, 236], [84, 296]],
+  player: [118, 318], mate: [168, 286],
+  pbullets: [[118, 296], [118, 276], [118, 256]], ebullets: [[120, 226], [74, 262], [182, 96]],
+  boom: [150, 236],
+};
+const R = (c, x, y, w, h, col) => { c.fillStyle = col; c.fillRect(x, y, w, h); };
+const C = (c, x, y, r, col) => { c.beginPath(); c.arc(x, y, r, 0, 7); c.fillStyle = col; c.fill(); };
+function label(c, text, col, bg, font) {
+  c.font = font; c.textAlign = 'center';
+  const w = c.measureText(text).width + 16;
+  c.fillStyle = bg; c.fillRect(120 - w / 2, 368, w, 22);
+  c.fillStyle = col; c.fillText(text, 120, 384);
+}
+
+// ---------- 1) 8-bit NES: tiny fixed palette, chunky 2px pixels, no anti-aliasing ----------
+(function nes() {
+  const c = document.getElementById('nes').getContext('2d');
+  const P = { g: '#00a800', gd: '#005800', dirt: '#ac7c00', dl: '#e4a040', w: '#0058f8', wl: '#3cbcfc', k: '#000000', wh: '#fcfcfc', r: '#d82800', gray: '#7c7c7c', tan: '#fca044', br: '#503000' };
+  R(c, 0, 0, 240, 400, P.g);
+  for (let y = 0; y < 400; y += 8) for (let x = (y / 8) % 2 ? 4 : 0; x < 240; x += 16) R(c, x, y + 2, 2, 2, P.gd);
+  R(c, 100, 0, 36, 400, P.dirt); for (let y = 0; y < 400; y += 6) R(c, 106, y, 2, 2, P.dl), R(c, 128, y + 3, 2, 2, P.dl);
+  R(c, 0, 150, 240, 38, P.w); for (let x = 0; x < 240; x += 12) R(c, x, 160 + (x % 24 ? 0 : 10), 6, 2, P.wl);
+  R(c, 100, 146, 36, 46, P.br); for (let y = 148; y < 192; y += 4) R(c, 100, y, 36, 2, P.tan);
+  for (const [x, y] of SC.trees) { R(c, x - 2, y - 2, 4, 6, P.br); R(c, x - 8, y - 16, 16, 14, P.gd); R(c, x - 6, y - 18, 12, 4, P.gd); R(c, x - 4, y - 14, 4, 4, P.g); }
+  for (let i = 0; i < 44; i += 6) R(c, 150 + i, 118, 5, 8, P.tan), R(c, 150 + i, 124, 5, 2, P.br);
+  const [tx, ty] = SC.turret; R(c, tx - 8, ty - 8, 16, 16, P.gray); R(c, tx - 4, ty - 4, 8, 8, P.k); R(c, tx - 1, ty, 2, 12, P.k);
+  const [kx, ky] = SC.tank; R(c, kx - 10, ky - 10, 4, 20, P.k); R(c, kx + 6, ky - 10, 4, 20, P.k); R(c, kx - 6, ky - 8, 12, 16, P.r); R(c, kx - 3, ky - 3, 6, 6, P.br); R(c, kx - 1, ky + 2, 2, 10, P.k);
+  const [px, py] = SC.prison; R(c, px - 16, py - 12, 32, 10, P.r); R(c, px - 14, py - 2, 28, 14, P.tan); R(c, px - 5, py + 2, 10, 10, P.k); for (let i = -4; i < 6; i += 3) R(c, px + i, py + 2, 1, 10, P.gray);
+  for (const [x, y] of SC.pows) { R(c, x - 2, y - 6, 4, 3, P.tan); R(c, x - 3, y - 3, 6, 6, P.wh); R(c, x - 5, y - 6, 2, 3, P.tan); }
+  for (const [x, y] of SC.soldiers) { R(c, x - 2, y - 6, 4, 3, P.r); R(c, x - 3, y - 3, 6, 6, P.gray); R(c, x - 3, y + 3, 2, 3, P.k); R(c, x + 1, y + 3, 2, 3, P.k); }
+  const [hx, hy] = SC.heli; R(c, hx - 18, hy - 18, 36, 36, P.gray); R(c, hx - 6, hy - 10, 12, 18, P.gd); R(c, hx - 1, hy + 8, 2, 12, P.gd); R(c, hx - 20, hy - 2, 40, 2, P.k); R(c, hx - 1, hy - 20, 2, 36, P.k);
+  const jeep = (x, y, col) => { R(c, x - 8, y - 8, 4, 6, P.k); R(c, x + 4, y - 8, 4, 6, P.k); R(c, x - 8, y + 4, 4, 6, P.k); R(c, x + 4, y + 4, 4, 6, P.k); R(c, x - 5, y - 10, 10, 20, col); R(c, x - 4, y - 4, 8, 3, P.wl); R(c, x - 1, y - 16, 2, 8, P.k); };
+  jeep(...SC.player, '#80d010'); jeep(...SC.mate, '#3cbcfc');
+  for (const [x, y] of SC.pbullets) R(c, x - 1, y - 2, 2, 4, P.wh);
+  for (const [x, y] of SC.ebullets) R(c, x - 2, y - 2, 4, 4, P.r);
+  const [bx, by] = SC.boom; R(c, bx - 8, by - 4, 16, 8, P.tan); R(c, bx - 4, by - 8, 8, 16, P.tan); R(c, bx - 4, by - 4, 8, 8, P.wh);
+  label(c, '8-BIT NES', P.wh, P.k, 'bold 12px monospace');
+})();
+
+// ---------- 2) Neon arcade: dark grid, glowing outlines ----------
+(function neon() {
+  const c = document.getElementById('neon').getContext('2d'); c.scale(2, 2);
+  R(c, 0, 0, 240, 400, '#07060f');
+  c.strokeStyle = 'rgba(120,40,255,0.18)'; c.lineWidth = 0.6;
+  for (let x = 0; x <= 240; x += 20) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, 400); c.stroke(); }
+  for (let y = 0; y <= 400; y += 20) { c.beginPath(); c.moveTo(0, y); c.lineTo(240, y); c.stroke(); }
+  const glow = (col, blur = 8) => { c.shadowColor = col; c.shadowBlur = blur; c.strokeStyle = col; c.fillStyle = col; };
+  const line = (pts, col, w = 1.5) => { glow(col); c.lineWidth = w; c.beginPath(); pts.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); c.stroke(); };
+  const ring = (x, y, r, col, w = 1.5) => { glow(col); c.lineWidth = w; c.beginPath(); c.arc(x, y, r, 0, 7); c.stroke(); };
+  const box = (x, y, w, h, col, lw = 1.5) => { glow(col); c.lineWidth = lw; c.strokeRect(x, y, w, h); };
+  c.setLineDash([8, 6]); line([[100, 0], [100, 150]], '#00e5ff', 1); line([[136, 0], [136, 150]], '#00e5ff', 1); line([[100, 188], [100, 400]], '#00e5ff', 1); line([[136, 188], [136, 400]], '#00e5ff', 1); c.setLineDash([]);
+  for (let k = 0; k < 3; k++) { glow('#2f7bff', 10); c.lineWidth = 1.3; c.beginPath(); for (let x = 0; x <= 240; x += 4) { const y = 158 + k * 11 + Math.sin(x / 12 + k) * 3; x ? c.lineTo(x, y) : c.moveTo(x, y); } c.stroke(); }
+  box(100, 146, 36, 46, '#ffe14a', 1.2);
+  for (const [x, y] of SC.trees) { ring(x, y - 12, 10, '#39ff88'); ring(x, y - 12, 5, '#39ff88', 1); }
+  box(150, 118, 44, 8, '#ffb02e');
+  const [tx, ty] = SC.turret; ring(tx, ty, 10, '#ff2fd0'); line([[tx, ty], [tx - 6, ty + 13]], '#ff2fd0', 2.5);
+  const [kx, ky] = SC.tank; box(kx - 10, ky - 11, 20, 22, '#ff2fd0'); ring(kx, ky, 5, '#ff2fd0'); line([[kx, ky], [kx + 8, ky + 14]], '#ff2fd0', 2.5);
+  const [px, py] = SC.prison; box(px - 16, py - 12, 32, 24, '#ffb02e'); for (let i = -6; i <= 6; i += 4) line([[px + i, py], [px + i, py + 12]], '#ffb02e', 1);
+  for (const [x, y] of SC.pows) { ring(x, y, 3.5, '#ffffff', 1.2); }
+  for (const [x, y] of SC.soldiers) { glow('#ff3b3b'); c.lineWidth = 1.5; c.beginPath(); c.moveTo(x, y - 5); c.lineTo(x + 4.5, y + 4); c.lineTo(x - 4.5, y + 4); c.closePath(); c.stroke(); }
+  const [hx, hy] = SC.heli; ring(hx, hy, 18, '#ffe14a', 1); c.font = 'bold 14px sans-serif'; c.textAlign = 'center'; glow('#ffe14a'); c.fillText('H', hx, hy + 5);
+  const jeep = (x, y, col) => { glow(col, 12); c.lineWidth = 2; c.beginPath(); c.moveTo(x, y - 12); c.lineTo(x + 8, y + 9); c.lineTo(x, y + 4); c.lineTo(x - 8, y + 9); c.closePath(); c.stroke(); };
+  jeep(...SC.player, '#00ffd5'); jeep(...SC.mate, '#4aa8ff');
+  for (const [x, y] of SC.pbullets) { glow('#00ffd5', 10); C(c, x, y, 2, '#c8fff4'); }
+  for (const [x, y] of SC.ebullets) { glow('#ff3b3b', 10); C(c, x, y, 2.5, '#ffb0b0'); }
+  const [bx, by] = SC.boom; for (let i = 0; i < 12; i++) { const a = i / 12 * 7; line([[bx + Math.cos(a) * 4, by + Math.sin(a) * 4], [bx + Math.cos(a) * 12, by + Math.sin(a) * 12]], '#ffb02e', 1.5); }
+  c.shadowBlur = 0;
+  glow('#00ffd5', 12); c.font = 'bold 13px monospace'; c.textAlign = 'center'; c.fillText('NEON ARCADE', 120, 384); c.shadowBlur = 0;
+})();
+
+// ---------- 3) Doodle on notebook paper: wobbly pen lines + crayon fill ----------
+(function doodle() {
+  const c = document.getElementById('doodle').getContext('2d'); c.scale(2, 2);
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  R(c, 0, 0, 240, 400, '#fbf8ee');
+  c.strokeStyle = 'rgba(80,140,220,0.35)'; c.lineWidth = 0.6;
+  for (let y = 12; y < 400; y += 14) { c.beginPath(); c.moveTo(0, y); c.lineTo(240, y); c.stroke(); }
+  c.strokeStyle = 'rgba(230,80,80,0.5)'; c.beginPath(); c.moveTo(18, 0); c.lineTo(18, 400); c.stroke();
+  const pen = (pts, col = '#2b2b33', w = 1.2, close = false) => {
+    for (let pass = 0; pass < 2; pass++) {
+      c.strokeStyle = col; c.lineWidth = w; c.lineJoin = 'round'; c.lineCap = 'round'; c.beginPath();
+      pts.forEach(([x, y], i) => { const jx = x + (rnd() - 0.5) * 1.4, jy = y + (rnd() - 0.5) * 1.4; i ? c.lineTo(jx, jy) : c.moveTo(jx, jy); });
+      if (close) c.closePath(); c.stroke();
+    }
+  };
+  const circ = (x, y, r, n = 14) => Array.from({ length: n + 1 }, (_, i) => [x + Math.cos(i / n * 7) * r, y + Math.sin(i / n * 7) * r]);
+  const rect = (x, y, w, h) => [[x, y], [x + w, y], [x + w, y + h], [x, y + h], [x, y]];
+  const crayon = (x, y, w, h, col) => { c.save(); c.beginPath(); c.rect(x, y, w, h); c.clip(); c.strokeStyle = col; c.lineWidth = 1.6; c.globalAlpha = 0.55; for (let k = -h; k < w; k += 3) { c.beginPath(); c.moveTo(x + k, y + h); c.lineTo(x + k + h, y); c.stroke(); } c.restore(); };
+  const crayonC = (x, y, r, col) => { c.save(); c.beginPath(); c.arc(x, y, r, 0, 7); c.clip(); crayon(x - r, y - r, r * 2, r * 2, col); c.restore(); };
+  crayon(100, 0, 36, 400, '#d9a35a'); pen([[100, 0], [100, 400]], '#7a5a30'); pen([[136, 0], [136, 400]], '#7a5a30');
+  crayon(0, 150, 240, 38, '#4a90e2'); pen([[0, 150], [240, 150]], '#2a5ea8'); pen([[0, 188], [240, 188]], '#2a5ea8');
+  for (let x = 10; x < 230; x += 30) pen([[x, 168], [x + 6, 164], [x + 12, 168]], '#2a5ea8', 1);
+  crayon(100, 146, 36, 46, '#a86a30'); pen(rect(100, 146, 36, 46), '#5a3a18'); for (let y = 152; y < 190; y += 6) pen([[100, y], [136, y]], '#5a3a18', 0.8);
+  for (const [x, y] of SC.trees) { pen([[x - 1, y], [x - 1, y - 8]], '#6a4a20', 2); crayonC(x, y - 15, 10, '#4caf50'); pen(circ(x, y - 15, 10), '#2e6b2e'); }
+  crayon(150, 118, 44, 8, '#e0c080'); pen(rect(150, 118, 44, 8)); for (let i = 155; i < 194; i += 7) pen([[i, 118], [i, 126]], '#2b2b33', 0.7);
+  const [tx, ty] = SC.turret; crayonC(tx, ty, 10, '#9e9e9e'); pen(circ(tx, ty, 10)); pen([[tx, ty], [tx - 6, ty + 14]], '#2b2b33', 3);
+  const [kx, ky] = SC.tank; crayon(kx - 9, ky - 11, 18, 22, '#e05a3a'); pen(rect(kx - 9, ky - 11, 18, 22)); pen(circ(kx, ky, 5)); pen([[kx, ky], [kx + 7, ky + 14]], '#2b2b33', 2.5);
+  const [px, py] = SC.prison; crayon(px - 16, py - 12, 32, 10, '#e05a3a'); pen([[px - 18, py - 2], [px, py - 14], [px + 18, py - 2]]); pen(rect(px - 15, py - 2, 30, 14)); for (let i = -6; i <= 6; i += 3) pen([[px + i, py + 2], [px + i, py + 12]], '#2b2b33', 0.8);
+  for (const [x, y] of SC.pows) { pen(circ(x, y - 5, 2.5, 8)); pen([[x, y - 2], [x, y + 4]]); pen([[x - 4, y - 5], [x, y - 1], [x + 4, y - 5]]); pen([[x - 3, y + 8], [x, y + 4], [x + 3, y + 8]]); }
+  for (const [x, y] of SC.soldiers) { crayonC(x, y - 5, 3, '#e53935'); pen(circ(x, y - 5, 3, 8)); pen([[x, y - 2], [x, y + 4]]); pen([[x - 3, y], [x + 3, y]]); pen([[x + 3, y], [x + 8, y - 2]], '#2b2b33', 1.6); pen([[x - 3, y + 8], [x, y + 4], [x + 3, y + 8]]); }
+  const [hx, hy] = SC.heli; pen(circ(hx, hy, 18, 18), '#7a7a7a'); c.font = 'bold 16px cursive'; c.fillStyle = '#7a7a7a'; c.textAlign = 'center'; c.fillText('H', hx, hy + 6); pen([[hx - 18, hy - 12], [hx + 18, hy + 4]], '#2b2b33', 1.4);
+  const jeep = (x, y, col) => { crayon(x - 6, y - 10, 12, 20, col); pen(rect(x - 6, y - 10, 12, 20)); for (const [wx, wy] of [[-9, -8], [5, -8], [-9, 3], [5, 3]]) pen(rect(x + wx, y + wy, 4, 6)); pen([[x, y - 4], [x, y - 17]], '#2b2b33', 2); };
+  jeep(...SC.player, '#43a047'); jeep(...SC.mate, '#1e88e5');
+  for (const [x, y] of SC.pbullets) pen([[x, y - 3], [x, y + 2]], '#ef6c00', 2);
+  for (const [x, y] of SC.ebullets) { crayonC(x, y, 2.5, '#d32f2f'); pen(circ(x, y, 2.5, 8), '#b71c1c', 1); }
+  const [bx, by] = SC.boom; const star = Array.from({ length: 17 }, (_, i) => { const r = i % 2 ? 6 : 13; const a = i / 16 * 7; return [bx + Math.cos(a) * r, by + Math.sin(a) * r]; }); c.save(); c.beginPath(); star.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); c.fillStyle = 'rgba(255,193,7,0.6)'; c.fill(); c.restore(); pen(star, '#e65100'); c.font = 'bold 9px cursive'; c.fillStyle = '#e65100'; c.fillText('BÙM!', bx, by - 16);
+  c.font = 'bold 15px cursive'; c.fillStyle = '#2b2b33'; c.textAlign = 'center'; c.fillText('Vẽ tay trên giấy', 120, 386);
+})();
+
+// ---------- 4) Plastic toys: glossy colours, big soft shadows, toy army men ----------
+(function toy() {
+  const c = document.getElementById('toy').getContext('2d'); c.scale(2, 2);
+  R(c, 0, 0, 240, 400, '#58b85a');
+  for (let y = 0; y < 400; y += 40) for (let x = (y / 40) % 2 ? 0 : 40; x < 240; x += 80) R(c, x, y, 40, 40, 'rgba(255,255,255,0.05)');
+  const sh = (x, y, rx, ry) => { c.beginPath(); c.ellipse(x + 4, y + 5, rx, ry, 0, 0, 7); c.fillStyle = 'rgba(0,40,0,0.28)'; c.fill(); };
+  const gloss = (x, y, r, a, b) => { const g = c.createRadialGradient(x - r * 0.4, y - r * 0.45, r * 0.05, x, y, r); g.addColorStop(0, '#ffffff'); g.addColorStop(0.18, a); g.addColorStop(1, b); return g; };
+  const rr = (x, y, w, h, r) => { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); };
+  const block = (x, y, w, h, r, a, b) => { rr(x + 3, y + 4, w, h, r); c.fillStyle = 'rgba(0,40,0,0.25)'; c.fill(); rr(x, y, w, h, r); const g = c.createLinearGradient(0, y, 0, y + h); g.addColorStop(0, a); g.addColorStop(1, b); c.fillStyle = g; c.fill(); rr(x + 2, y + 1.5, w - 4, Math.min(4, h / 3), 2); c.fillStyle = 'rgba(255,255,255,0.45)'; c.fill(); };
+  // road: grey plastic track piece with studs
+  block(98, -10, 40, 420, 6, '#a6a8b2', '#7c7f8c'); for (let y = 6; y < 400; y += 18) C(c, 118, y, 2, 'rgba(255,255,255,0.35)');
+  // river: glossy blue plastic
+  block(-6, 150, 252, 38, 8, '#4fb4ff', '#1f6fd6'); for (let x = 12; x < 240; x += 36) { rr(x, 160, 14, 3, 1.5); c.fillStyle = 'rgba(255,255,255,0.5)'; c.fill(); }
+  block(98, 144, 40, 50, 5, '#ffcf4a', '#e09a14');
+  for (const [x, y] of SC.trees) { sh(x, y - 4, 11, 5); block(x - 2.5, y - 10, 5, 10, 2, '#b07040', '#7a4a24'); c.beginPath(); c.arc(x, y - 18, 11, 0, 7); c.fillStyle = gloss(x, y - 18, 11, '#5ee06a', '#1e8f34'); c.fill(); }
+  block(150, 116, 44, 10, 4, '#e8c98a', '#b8915a');
+  const [tx, ty] = SC.turret; sh(tx, ty, 11, 6); c.beginPath(); c.arc(tx, ty, 11, 0, 7); c.fillStyle = gloss(tx, ty, 11, '#c9b48a', '#8a7448'); c.fill(); block(tx - 2, ty, 4, 14, 2, '#5a5c66', '#33353e');
+  const [kx, ky] = SC.tank; block(kx - 11, ky - 11, 22, 22, 5, '#e0d0a0', '#a89060'); c.beginPath(); c.arc(kx, ky, 6, 0, 7); c.fillStyle = gloss(kx, ky, 6, '#e8d8a8', '#9a8450'); c.fill(); block(kx - 1.5, ky + 2, 3, 13, 1.5, '#a89060', '#7a6638');
+  const [px, py] = SC.prison; block(px - 15, py - 4, 30, 16, 3, '#ffffff', '#cfcfd8'); block(px - 18, py - 15, 36, 12, 4, '#ff5a4a', '#c8281e'); block(px - 5, py + 1, 10, 11, 2, '#3a3a44', '#22222a');
+  // toy army men: tan enemies, white hostages
+  const man = (x, y, a, b) => { sh(x, y + 4, 5, 2.5); c.beginPath(); c.ellipse(x, y + 5, 5, 2.2, 0, 0, 7); c.fillStyle = b; c.fill(); block(x - 2.5, y - 3, 5, 8, 2, a, b); c.beginPath(); c.arc(x, y - 5.5, 3, 0, 7); c.fillStyle = gloss(x, y - 5.5, 3, a, b); c.fill(); };
+  for (const [x, y] of SC.soldiers) { man(x, y, '#e8cc90', '#b08a50'); block(x + 2, y - 2, 6, 1.6, 0.8, '#7a6638', '#5a4a28'); }
+  for (const [x, y] of SC.pows) man(x, y, '#ffffff', '#c8c8d0');
+  const [hx, hy] = SC.heli; c.beginPath(); c.arc(hx, hy, 19, 0, 7); c.fillStyle = gloss(hx, hy, 19, '#ffe27a', '#e0a020'); c.fill(); c.fillStyle = '#ffffff'; c.font = 'bold 18px sans-serif'; c.textAlign = 'center'; c.fillText('H', hx, hy + 6);
+  const jeep = (x, y, a, b) => { sh(x, y, 10, 12); for (const [wx, wy] of [[-9, -8], [5, -8], [-9, 3], [5, 3]]) block(x + wx, y + wy, 4, 6, 2, '#44464f', '#1e1f25'); block(x - 6.5, y - 11, 13, 22, 4, a, b); block(x - 4.5, y - 4, 9, 3.5, 1.5, '#b8ecff', '#6ab8e8'); block(x - 1.3, y - 17, 2.6, 10, 1.3, '#5a5c66', '#33353e'); };
+  jeep(...SC.player, '#5ee06a', '#1e8f34'); jeep(...SC.mate, '#6ab8ff', '#1f5fd6');
+  for (const [x, y] of SC.pbullets) { c.beginPath(); c.arc(x, y, 2.4, 0, 7); c.fillStyle = gloss(x, y, 2.4, '#ffe27a', '#e09a14'); c.fill(); }
+  for (const [x, y] of SC.ebullets) { c.beginPath(); c.arc(x, y, 2.8, 0, 7); c.fillStyle = gloss(x, y, 2.8, '#ff7a6a', '#c8281e'); c.fill(); }
+  const [bx, by] = SC.boom; for (const [ox, oy, r, col] of [[-5, 2, 7, '#ffcf4a'], [5, -3, 8, '#ff8a3c'], [0, -8, 6, '#ffffff'], [6, 6, 5, '#ffcf4a']]) { c.beginPath(); c.arc(bx + ox, by + oy, r, 0, 7); c.fillStyle = gloss(bx + ox, by + oy, r, col, '#e0602a'); c.fill(); }
+  block(56, 370, 128, 22, 8, '#ffffff', '#d8d8e0'); c.fillStyle = '#2a2a34'; c.font = 'bold 13px sans-serif'; c.textAlign = 'center'; c.fillText('ĐỒ CHƠI NHỰA', 120, 385);
+})();
+</script>
+</body></html>
