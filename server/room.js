@@ -2,7 +2,7 @@
 import {
   VIEW_W, VIEW_H, DT, SNAP_EVERY, CAM_LEAD, LEVEL_LEN, JEEP_R, LIVES, MAX_CARRY, RESPAWN_MS, INVULN_MS,
   GUN, MAX_WEAPON, RESCUE_PER_UPGRADE, BULLET_SPEED, BULLET_RANGE, RATE_MAX, RATE_MULT, SCORE, STAGES, DIFF,
-  ITEM, ITEM_LIFE, SHIELD_SEC, MAX_LIVES, AUTO_AIM_RANGE,
+  ITEM, ITEM_LIFE, SHIELD_SEC, MAX_LIVES, AUTO_AIM_RANGE, AIM_OFF, AIM_CONE, AIM_FULL, AIM_CONE_HALF,
 } from '../shared/constants.js';
 import { LEVELS } from '../shared/level.js';
 import { stepJeep, collidesAny, normInput, dist2, rng, pointInRect } from '../shared/physics.js';
@@ -10,6 +10,8 @@ import { T, B, HARD, TYPE_NAME, footprint, distToEntity, isBossType } from '../s
 import { botInput } from './bot.js';
 
 let ROOM_SEQ = 1;
+// join message `aim`: 0/1/2, or legacy true/false
+const aimModeOf = v => v === false || v === 0 ? AIM_OFF : v === 1 ? AIM_CONE : AIM_FULL;
 const devEnv = k => (typeof process !== 'undefined' && process.env ? process.env[k] : undefined);
 
 export class Room {
@@ -25,7 +27,7 @@ export class Room {
     this.events = [];
     this.ended = false;
     this.players = seats.map((s, slot) => ({
-      slot, name: s.name || `P${slot + 1}`, isBot: !!s.isBot, autoAim: s.isBot || s.aim !== false,
+      slot, name: s.name || `P${slot + 1}`, isBot: !!s.isBot, aimMode: s.isBot ? AIM_FULL : aimModeOf(s.aim),
       x: 0, y: 0, a: -Math.PI / 2,
       alive: true, lives: LIVES, invulnUntil: 0, respawnAt: 0,
       weapon: 1, carry: 0, score: 0, rescued: 0, kills: 0,
@@ -170,7 +172,7 @@ export class Room {
   setBot(slot) {
     const p = this.players[slot];
     if (!p) return;
-    p.isBot = true; p.autoAim = true; p.bot = { t: 0, jitter: 0 }; p.inputQ = [];
+    p.isBot = true; p.aimMode = AIM_FULL; p.bot = { t: 0, jitter: 0 }; p.inputQ = [];
     p.name = p.name.replace(/ \(bot\)$/, '') + ' (bot)';
     this.events.push(['b', slot]);
   }
@@ -339,14 +341,16 @@ export class Room {
     }
   }
 
-  // auto-aim: nearest shootable target in range, targets ahead of the jeep count as closer
-  aimTarget(p) {
+  // auto-aim: nearest shootable target in range, targets ahead of the jeep count as closer.
+  // `cone` limits it to targets within that angle of the jeep's nose (assist mode).
+  aimTarget(p, cone = Math.PI) {
     let best = null, bs = Infinity;
     for (const e of this.enemies.values()) {
       if (this.shielded(e) || !this.inView(e.x, e.y, -4)) continue;
       const d = distToEntity(p.x, p.y, e.type, e.x, e.y);
       if (d > AUTO_AIM_RANGE) continue;
       const off = Math.abs(Math.atan2(Math.sin(Math.atan2(e.y - p.y, e.x - p.x) - p.a), Math.cos(Math.atan2(e.y - p.y, e.x - p.x) - p.a)));
+      if (off > cone) continue;
       const sc = d * (1 + off * 0.35) * (e.type === T.prison ? 1.6 : 1);
       if (sc < bs) { bs = sc; best = e; }
     }
@@ -356,7 +360,8 @@ export class Room {
   // main gun: fires along the jeep heading, or at the nearest target when auto-aim is on
   fire(p) {
     p.mgCd -= DT; p.sCd -= DT; p.lCd -= DT;
-    const tgt = p.autoAim && !(this.tut && this.tut.step === 0) ? this.aimTarget(p) : null;
+    const tgt = p.aimMode !== AIM_OFF && !(this.tut && this.tut.step === 0)
+      ? this.aimTarget(p, p.aimMode === AIM_CONE ? AIM_CONE_HALF : Math.PI) : null;
     if (!p.firing && !tgt) return;   // manual: hold the right half; auto-aim: also fires by itself at targets
     const g = GUN[p.weapon];
     const aim = tgt ? Math.atan2(tgt.y - p.y, tgt.x - p.x) : p.a;

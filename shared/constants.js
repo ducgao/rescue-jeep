@@ -39,7 +39,10 @@ export const BULLET_RANGE = 200;
 export const RATE_MAX = 3;          // "R" item stacks, each makes the gun fire faster
 export const RATE_MULT = 0.8;
 export const RESCUE_PER_UPGRADE = 5;
-export const AUTO_AIM_RANGE = 170;   // auto-aim locks onto targets this close (px)  // every 5 POWs delivered to a helicopter = +1 gun level
+export const AUTO_AIM_RANGE = 170;   // auto-aim locks onto targets this close (px)
+// aim modes: 0 = manual (straight ahead), 1 = assist (only targets inside a cone ahead), 2 = full (any direction)
+export const AIM_OFF = 0, AIM_CONE = 1, AIM_FULL = 2;
+export const AIM_CONE_HALF = 0.52;    // assist cone half-angle (rad, ~30 degrees each side of the jeep's nose)  // every 5 POWs delivered to a helicopter = +1 gun level
 
 export const STAGES = 4;               // index 0 = tutorial, 1..3 = real stages
 // per-stage difficulty: cd = enemy fire-cooldown multiplier (higher = slower), bspd = enemy bullet speed,

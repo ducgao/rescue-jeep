@@ -1,4 +1,4 @@
-import { VIEW_W, VIEW_H, TICK_RATE, LEVEL_LEN, MAX_CARRY, MATCH_WAIT_MS, DIFF, STAGES, ITEM, RESCUE_PER_UPGRADE } from '../../shared/constants.js';
+import { VIEW_W, VIEW_H, TICK_RATE, LEVEL_LEN, MAX_CARRY, MATCH_WAIT_MS, DIFF, STAGES, ITEM, RESCUE_PER_UPGRADE, AUTO_AIM_RANGE, AIM_CONE_HALF } from '../../shared/constants.js';
 import { LEVEL, setStage } from '../../shared/level.js';
 import { stepJeep, normInput } from '../../shared/physics.js';
 import { T, B, footprint } from '../../shared/entities.js';
@@ -148,8 +148,19 @@ $('askLife').onclick = e => { e.stopPropagation(); send({ t: 'life' }); };
 $('lifeYes').onclick = e => { e.stopPropagation(); send({ t: 'lifeAns', yes: 1 }); $('lifePrompt').hidden = true; };
 $('lifeNo').onclick = e => { e.stopPropagation(); send({ t: 'lifeAns', yes: 0 }); $('lifePrompt').hidden = true; };
 if ($('tut')) $('tut').checked = store.get('rj_tut_done') !== '1';
-const autoAim = () => !$('aim') || $('aim').checked;
-if ($('aim')) { $('aim').checked = store.get('rj_aim') !== '0'; $('aim').onchange = () => store.set('rj_aim', $('aim').checked ? '1' : '0'); }
+// aim mode: 0 manual, 1 assist (cone ahead), 2 full auto
+const AIM_HINT = ['Đạn bay thẳng theo đầu xe, giữ nửa phải để bắn',
+  'Tự bắn mục tiêu trong góc ~60° trước đầu xe',
+  'Tự bắn mục tiêu gần nhất mọi hướng (dễ nhất)'];
+let aimMode = [0, 1, 2].includes(+store.get('rj_aim_mode')) && store.get('rj_aim_mode') !== null ? +store.get('rj_aim_mode') : 1;
+function setAim(m) {
+  aimMode = m; store.set('rj_aim_mode', String(m));
+  for (const b of document.querySelectorAll('[data-aim]')) b.setAttribute('aria-pressed', +b.dataset.aim === m ? 'true' : 'false');
+  if ($('aimHint')) $('aimHint').textContent = AIM_HINT[m];
+}
+for (const b of document.querySelectorAll('[data-aim]')) b.onclick = () => setAim(+b.dataset.aim);
+setAim(aimMode);
+const autoAim = () => aimMode !== 0;
 const muteBtn = $('mute');
 setMuted(store.get('rj_mute') === '1');
 const paintMute = () => { muteBtn.textContent = isMuted() ? '×' : '♪'; muteBtn.style.opacity = isMuted() ? 0.5 : 1; };
@@ -208,7 +219,7 @@ async function startMatchmaking(opts = {}) {
     show('wait'); setCount(Math.ceil(MATCH_WAIT_MS / 1000));
     ws = window.RJ_LOCAL ? window.RJ_LOCAL() : new WebSocket(wsUrl());
   }
-  ws.onopen = () => send({ t: 'join', name, tut, aim: autoAim() });
+  ws.onopen = () => send({ t: 'join', name, tut, aim: aimMode });
   ws.onmessage = ev => onMsg(JSON.parse(ev.data));
   ws.onerror = () => {};
   ws.onclose = () => {
@@ -571,11 +582,29 @@ function drawControls(now) {
 function tutLines(step, sub) {
   if (step === 0) return ['BÀI 1/3 · LÁI XE', 'Kéo ngón tay ở NỬA TRÁI màn hình để lái', `Chạy tới vòng sáng (${sub + 1}/3)`];
   if (step === 1) return autoAim()
-    ? ['BÀI 2/3 · BẮN', 'TỰ NGẮM: xe tự bắn mục tiêu gần nhất', `Lái lại gần mục tiêu. Giữ NỬA PHẢI để bắn thẳng đầu xe (${sub + 1}/3)`]
+    ? (aimMode === 1
+      ? ['BÀI 2/3 · BẮN', 'HỖ TRỢ NGẮM: xe tự bắn mục tiêu TRƯỚC ĐẦU XE', `Quay đầu xe về phía mục tiêu và lại gần (${sub + 1}/3)`]
+      : ['BÀI 2/3 · BẮN', 'TỰ NGẮM: xe tự bắn mục tiêu gần nhất', `Lái lại gần mục tiêu. Giữ NỬA PHẢI để bắn thẳng đầu xe (${sub + 1}/3)`])
     : ['BÀI 2/3 · BẮN', 'Đạn bay THẲNG THEO HƯỚNG ĐẦU XE', `Quay đầu xe về mục tiêu, rồi giữ NỬA PHẢI để bắn (${sub + 1}/3)`];
   if (step === 2) return ['BÀI 3/3 · CỨU TÙ BINH', ['Bắn sập trại giam', 'Lái xe chạm vào tù binh để đón', 'Chở tù binh về bãi trực thăng (chữ H)'][sub] || '', 'Cứu đủ 5 người = +1 cấp đạn'];
   return ['HOÀN THÀNH!', 'Bạn đã sẵn sàng', 'Vào trận thật…'];
 }
+// assist mode: faint wedge in front of the jeep showing where auto-aim reaches
+function drawAimCone() {
+  if (aimMode !== 1 || !pred || !latest || latest.ph) return;
+  const me = latest.p[you]; if (!me || !me[3]) return;
+  const d = L.dpr, c = ctx, s = L.s, cam = latest.cam;
+  const x = (L.ox + pred.x * s) * d, y = (L.oy + (pred.y - cam) * s) * d, r = AUTO_AIM_RANGE * s * d, a = pred.a;
+  c.save();
+  c.beginPath(); c.rect(L.ox * d, L.oy * d, L.gw * d, L.gh * d); c.clip();
+  const g = c.createRadialGradient(x, y, 10 * s * d, x, y, r);
+  g.addColorStop(0, 'rgba(255,240,150,0.16)'); g.addColorStop(1, 'rgba(255,240,150,0)');
+  c.fillStyle = g; c.beginPath(); c.moveTo(x, y); c.arc(x, y, r, a - AIM_CONE_HALF, a + AIM_CONE_HALF); c.closePath(); c.fill();
+  c.strokeStyle = 'rgba(255,240,150,0.28)'; c.lineWidth = 1.5 * d; c.setLineDash([5 * d, 6 * d]);
+  for (const k of [-1, 1]) { c.beginPath(); c.moveTo(x, y); c.lineTo(x + Math.cos(a + k * AIM_CONE_HALF) * r, y + Math.sin(a + k * AIM_CONE_HALF) * r); c.stroke(); }
+  c.restore();
+}
+
 function drawTutorial(now) {
   if (!latest || !latest.tu || latest.ph) return;
   const [step, sub, mx, my] = latest.tu;
@@ -595,7 +624,7 @@ function drawTutorial(now) {
     c.fillStyle = c.strokeStyle; c.beginPath(); c.moveTo(sx, ay + 10 * d); c.lineTo(sx - 9 * d, ay - 4 * d); c.lineTo(sx + 9 * d, ay - 4 * d); c.closePath(); c.fill();
   }
   // shooting lesson: show the line the gun fires along (straight out of the jeep's nose)
-  if (step === 1 && pred && !autoAim()) {
+  if (step === 1 && pred && aimMode === 0) {
     const a = pred.a, [jx, jy] = W2S(pred.x + Math.cos(a) * 14, pred.y + Math.sin(a) * 14), len = 120 * s * d;
     c.setLineDash([7 * d, 6 * d]); c.strokeStyle = 'rgba(255,240,150,0.9)'; c.lineWidth = 2.5 * d;
     c.beginPath(); c.moveTo(jx, jy); c.lineTo(jx + Math.cos(a) * len, jy + Math.sin(a) * len); c.stroke(); c.setLineDash([]);
@@ -662,7 +691,7 @@ function frame(now) {
   ctx.drawImage(buf, Math.round((L.ox + sx * L.s) * L.dpr), Math.round((L.oy + sy * L.s) * L.dpr), Math.round(L.gw * L.dpr), Math.round(L.gh * L.dpr));
   ctx.strokeStyle = '#2a2e20'; ctx.lineWidth = 2 * L.dpr;
   ctx.strokeRect(L.ox * L.dpr, L.oy * L.dpr, L.gw * L.dpr, L.gh * L.dpr);
-  if (S) { drawHud(S, now); drawControls(now); drawTutorial(now); }
+  if (S) { drawAimCone(); drawHud(S, now); drawControls(now); drawTutorial(now); }
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

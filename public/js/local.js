@@ -11,7 +11,7 @@ export function makeLocal() {
   fake.send = str => {
     const m = JSON.parse(str);
     if (m.t === 'join') {
-      room = new Room([{ name: m.name, aim: m.aim !== false }, { name: 'BOT', isBot: true }], {
+      room = new Room([{ name: m.name, aim: m.aim }, { name: 'BOT', isBot: true }], {
         seed: Date.now(), tutorial: !!m.tut, snapEvery: 1,
         send: (slot, msg) => { if (slot === 0) emit(msg); },
         onEnd: stop,

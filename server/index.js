@@ -87,7 +87,7 @@ wss.on('connection', ws => {
     try { m = JSON.parse(raw); } catch { return; }
     if (!m || typeof m !== 'object') return;
     switch (m.t) {
-      case 'join': ws.wantsTutorial = !!m.tut; ws.wantsAim = m.aim !== false; join(ws, String(m.name || 'Player').replace(/[^\p{L}\p{N} _.-]/gu, '').slice(0, 12) || 'Player'); break;
+      case 'join': ws.wantsTutorial = !!m.tut; ws.wantsAim = m.aim; join(ws, String(m.name || 'Player').replace(/[^\p{L}\p{N} _.-]/gu, '').slice(0, 12) || 'Player'); break;
       case 'cancel': if (waiting && waiting.ws === ws) clearWaiting(); break;
       case 'i': if (ws.room && !ws.room.ended) ws.room.pushInput(ws.slot, m.s | 0, m.x, m.y, m.f); break;
       case 'skip': if (ws.room && !ws.room.ended) ws.room.skipTutorial(); break;
