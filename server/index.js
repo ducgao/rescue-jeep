@@ -16,7 +16,9 @@ const server = http.createServer((req, res) => {
   if (url === '/healthz') { res.writeHead(200); return res.end('ok'); }
   if (url === '/') url = '/index.html';
   if (url.startsWith('/vendor/')) url = '/node_modules/three/build/' + url.slice(8);   // three.js for the 3D theme
-  const base = url.startsWith('/shared/') || url.startsWith('/node_modules/three/build/') ? ROOT : path.join(ROOT, 'public');
+  // the training yard runs in the browser, so the simulation modules are served too (never index.js)
+  const simFile = url === '/server/room.js' || url === '/server/bot.js';
+  const base = simFile || url.startsWith('/shared/') || url.startsWith('/node_modules/three/build/') ? ROOT : path.join(ROOT, 'public');
   const file = path.normalize(path.join(base, url));
   if (!file.startsWith(base)) { res.writeHead(403); return res.end(); }
   fs.readFile(file, (err, data) => {
@@ -35,7 +37,7 @@ function sendTo(ws, msg) {
 }
 
 function startRoom(seats) {
-  const room = new Room(seats.map(s => ({ name: s.name, isBot: !s.ws })), {
+  const room = new Room(seats.map(s => ({ name: s.name, isBot: !s.ws, aim: s.ws ? s.ws.wantsAim : true })), {
     tutorial: seats.some(s => s.ws && s.ws.wantsTutorial),
     send: (slot, msg) => sendTo(seats[slot].ws, msg),
     onEnd: r => {
@@ -85,7 +87,7 @@ wss.on('connection', ws => {
     try { m = JSON.parse(raw); } catch { return; }
     if (!m || typeof m !== 'object') return;
     switch (m.t) {
-      case 'join': ws.wantsTutorial = !!m.tut; join(ws, String(m.name || 'Player').replace(/[^\p{L}\p{N} _.-]/gu, '').slice(0, 12) || 'Player'); break;
+      case 'join': ws.wantsTutorial = !!m.tut; ws.wantsAim = m.aim !== false; join(ws, String(m.name || 'Player').replace(/[^\p{L}\p{N} _.-]/gu, '').slice(0, 12) || 'Player'); break;
       case 'cancel': if (waiting && waiting.ws === ws) clearWaiting(); break;
       case 'i': if (ws.room && !ws.room.ended) ws.room.pushInput(ws.slot, m.s | 0, m.x, m.y, m.f); break;
       case 'skip': if (ws.room && !ws.room.ended) ws.room.skipTutorial(); break;

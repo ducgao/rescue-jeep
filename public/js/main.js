@@ -148,10 +148,32 @@ $('askLife').onclick = e => { e.stopPropagation(); send({ t: 'life' }); };
 $('lifeYes').onclick = e => { e.stopPropagation(); send({ t: 'lifeAns', yes: 1 }); $('lifePrompt').hidden = true; };
 $('lifeNo').onclick = e => { e.stopPropagation(); send({ t: 'lifeAns', yes: 0 }); $('lifePrompt').hidden = true; };
 if ($('tut')) $('tut').checked = store.get('rj_tut_done') !== '1';
+const autoAim = () => !$('aim') || $('aim').checked;
+if ($('aim')) { $('aim').checked = store.get('rj_aim') !== '0'; $('aim').onchange = () => store.set('rj_aim', $('aim').checked ? '1' : '0'); }
 const muteBtn = $('mute');
 setMuted(store.get('rj_mute') === '1');
 const paintMute = () => { muteBtn.textContent = isMuted() ? '×' : '♪'; muteBtn.style.opacity = isMuted() ? 0.5 : 1; };
 paintMute();
+// fullscreen toggle (hidden where the browser has no Fullscreen API, e.g. iPhone Safari)
+const fsBtn = $('fs'), docEl = document.documentElement;
+const fsEl = () => document.fullscreenElement || document.webkitFullscreenElement;
+const fsOk = !!(docEl.requestFullscreen || docEl.webkitRequestFullscreen) && (document.fullscreenEnabled || document.webkitFullscreenEnabled);
+const paintFs = () => { fsBtn.textContent = fsEl() ? '⤡' : '⛶'; fsBtn.setAttribute('aria-label', fsEl() ? 'Thoát toàn màn hình' : 'Toàn màn hình'); };
+if (fsBtn) {
+  fsBtn.hidden = !fsOk; paintFs();
+  fsBtn.onclick = async e => {
+    e.stopPropagation();
+    try {
+      if (fsEl()) await (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      else {
+        await (docEl.requestFullscreen || docEl.webkitRequestFullscreen).call(docEl, { navigationUI: 'hide' });
+        try { await screen.orientation.lock('landscape'); } catch {}
+      }
+    } catch {}
+  };
+  document.addEventListener('fullscreenchange', paintFs);
+  document.addEventListener('webkitfullscreenchange', paintFs);
+}
 muteBtn.onclick = e => { e.stopPropagation(); setMuted(!isMuted()); store.set('rj_mute', isMuted() ? '1' : '0'); paintMute(); };
 
 // ---------------- network ----------------
@@ -170,16 +192,23 @@ function wsUrl() {
 function send(m) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); }
 function closeWs() { if (ws) { ws.onclose = null; try { ws.close(); } catch {} ws = null; } }
 
-function startMatchmaking() {
+// Training yard always runs locally in the browser; only real stages need matchmaking on the server.
+let localTut = false;
+async function startMatchmaking(opts = {}) {
   const name = ($('name').value || '').trim() || 'Player';
   store.set('rj_name', name);
   $('err').textContent = '';
   closeWs();
   state = 'connecting';
-  show('wait'); setCount(Math.ceil(MATCH_WAIT_MS / 1000));
-  ws = window.RJ_LOCAL ? window.RJ_LOCAL() : new WebSocket(wsUrl());
-  const tut = $('tut') ? $('tut').checked : false;
-  ws.onopen = () => send({ t: 'join', name, tut });
+  const tut = !opts.noTut && ($('tut') ? $('tut').checked : false);
+  localTut = tut && !window.RJ_LOCAL;
+  if (localTut) {
+    ws = (await import('./local.js')).makeLocal();
+  } else {
+    show('wait'); setCount(Math.ceil(MATCH_WAIT_MS / 1000));
+    ws = window.RJ_LOCAL ? window.RJ_LOCAL() : new WebSocket(wsUrl());
+  }
+  ws.onopen = () => send({ t: 'join', name, tut, aim: autoAim() });
   ws.onmessage = ev => onMsg(JSON.parse(ev.data));
   ws.onerror = () => {};
   ws.onclose = () => {
@@ -300,6 +329,8 @@ function runEvent(e) {
     banner = e[1] === 0 ? { text: 'TẬP LÁI', sub: 'Màn hướng dẫn', t: performance.now() }
       : { text: `STAGE ${e[1]}`, sub: DIFF[e[1]].name + (e[1] > 1 ? ' · +1 mạng' : ''), t: performance.now() };
     if (e[1] === 1 && curStage === 1 && $('tut') && $('tut').checked) { store.set('rj_tut_done', '1'); $('tut').checked = false; }
+    // training finished in the local yard -> now look for a teammate online
+    if (e[1] === 1 && localTut) { localTut = false; store.set('rj_tut_done', '1'); if ($('tut')) $('tut').checked = false; setTimeout(() => startMatchmaking({ noTut: true }), 0); return; }
     sfx('start');
   } else if (k === 'c') {
     banner = { text: 'CLEAR!', sub: `Thưởng +${e[2]} điểm`, t: performance.now(), dur: 3.8 };
@@ -539,7 +570,9 @@ function drawControls(now) {
 // step-by-step coaching for the training yard: [lesson, sub-step, markerX, markerY]
 function tutLines(step, sub) {
   if (step === 0) return ['BÀI 1/3 · LÁI XE', 'Kéo ngón tay ở NỬA TRÁI màn hình để lái', `Chạy tới vòng sáng (${sub + 1}/3)`];
-  if (step === 1) return ['BÀI 2/3 · BẮN', 'Đạn bay THẲNG THEO HƯỚNG ĐẦU XE', `Quay đầu xe về mục tiêu, rồi giữ NỬA PHẢI để bắn (${sub + 1}/3)`];
+  if (step === 1) return autoAim()
+    ? ['BÀI 2/3 · BẮN', 'TỰ NGẮM: xe tự bắn mục tiêu gần nhất', `Lái lại gần mục tiêu. Giữ NỬA PHẢI để bắn thẳng đầu xe (${sub + 1}/3)`]
+    : ['BÀI 2/3 · BẮN', 'Đạn bay THẲNG THEO HƯỚNG ĐẦU XE', `Quay đầu xe về mục tiêu, rồi giữ NỬA PHẢI để bắn (${sub + 1}/3)`];
   if (step === 2) return ['BÀI 3/3 · CỨU TÙ BINH', ['Bắn sập trại giam', 'Lái xe chạm vào tù binh để đón', 'Chở tù binh về bãi trực thăng (chữ H)'][sub] || '', 'Cứu đủ 5 người = +1 cấp đạn'];
   return ['HOÀN THÀNH!', 'Bạn đã sẵn sàng', 'Vào trận thật…'];
 }
@@ -562,7 +595,7 @@ function drawTutorial(now) {
     c.fillStyle = c.strokeStyle; c.beginPath(); c.moveTo(sx, ay + 10 * d); c.lineTo(sx - 9 * d, ay - 4 * d); c.lineTo(sx + 9 * d, ay - 4 * d); c.closePath(); c.fill();
   }
   // shooting lesson: show the line the gun fires along (straight out of the jeep's nose)
-  if (step === 1 && pred) {
+  if (step === 1 && pred && !autoAim()) {
     const a = pred.a, [jx, jy] = W2S(pred.x + Math.cos(a) * 14, pred.y + Math.sin(a) * 14), len = 120 * s * d;
     c.setLineDash([7 * d, 6 * d]); c.strokeStyle = 'rgba(255,240,150,0.9)'; c.lineWidth = 2.5 * d;
     c.beginPath(); c.moveTo(jx, jy); c.lineTo(jx + Math.cos(a) * len, jy + Math.sin(a) * len); c.stroke(); c.setLineDash([]);

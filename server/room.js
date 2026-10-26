@@ -2,7 +2,7 @@
 import {
   VIEW_W, VIEW_H, DT, SNAP_EVERY, CAM_LEAD, LEVEL_LEN, JEEP_R, LIVES, MAX_CARRY, RESPAWN_MS, INVULN_MS,
   GUN, MAX_WEAPON, RESCUE_PER_UPGRADE, BULLET_SPEED, BULLET_RANGE, RATE_MAX, RATE_MULT, SCORE, STAGES, DIFF,
-  ITEM, ITEM_LIFE, SHIELD_SEC, MAX_LIVES,
+  ITEM, ITEM_LIFE, SHIELD_SEC, MAX_LIVES, AUTO_AIM_RANGE,
 } from '../shared/constants.js';
 import { LEVELS } from '../shared/level.js';
 import { stepJeep, collidesAny, normInput, dist2, rng, pointInRect } from '../shared/physics.js';
@@ -25,7 +25,7 @@ export class Room {
     this.events = [];
     this.ended = false;
     this.players = seats.map((s, slot) => ({
-      slot, name: s.name || `P${slot + 1}`, isBot: !!s.isBot,
+      slot, name: s.name || `P${slot + 1}`, isBot: !!s.isBot, autoAim: s.isBot || s.aim !== false,
       x: 0, y: 0, a: -Math.PI / 2,
       alive: true, lives: LIVES, invulnUntil: 0, respawnAt: 0,
       weapon: 1, carry: 0, score: 0, rescued: 0, kills: 0,
@@ -170,7 +170,7 @@ export class Room {
   setBot(slot) {
     const p = this.players[slot];
     if (!p) return;
-    p.isBot = true; p.bot = { t: 0, jitter: 0 }; p.inputQ = [];
+    p.isBot = true; p.autoAim = true; p.bot = { t: 0, jitter: 0 }; p.inputQ = [];
     p.name = p.name.replace(/ \(bot\)$/, '') + ' (bot)';
     this.events.push(['b', slot]);
   }
@@ -339,16 +339,33 @@ export class Room {
     }
   }
 
-  // main gun: always fires straight ahead along the jeep heading
+  // auto-aim: nearest shootable target in range, targets ahead of the jeep count as closer
+  aimTarget(p) {
+    let best = null, bs = Infinity;
+    for (const e of this.enemies.values()) {
+      if (this.shielded(e) || !this.inView(e.x, e.y, -4)) continue;
+      const d = distToEntity(p.x, p.y, e.type, e.x, e.y);
+      if (d > AUTO_AIM_RANGE) continue;
+      const off = Math.abs(Math.atan2(Math.sin(Math.atan2(e.y - p.y, e.x - p.x) - p.a), Math.cos(Math.atan2(e.y - p.y, e.x - p.x) - p.a)));
+      const sc = d * (1 + off * 0.35) * (e.type === T.prison ? 1.6 : 1);
+      if (sc < bs) { bs = sc; best = e; }
+    }
+    return best;
+  }
+
+  // main gun: fires along the jeep heading, or at the nearest target when auto-aim is on
   fire(p) {
     p.mgCd -= DT; p.sCd -= DT; p.lCd -= DT;
-    if (!p.firing) return;   // the gun only fires while the player holds the fire side of the screen
+    const tgt = p.autoAim && !(this.tut && this.tut.step === 0) ? this.aimTarget(p) : null;
+    if (!p.firing && !tgt) return;   // manual: hold the right half; auto-aim: also fires by itself at targets
     const g = GUN[p.weapon];
-    const ca = Math.cos(p.a), sa = Math.sin(p.a), nx = -sa, ny = ca;
+    const aim = tgt ? Math.atan2(tgt.y - p.y, tgt.x - p.x) : p.a;
+    p.aim = aim;
+    const ca = Math.cos(aim), sa = Math.sin(aim), nx = -sa, ny = ca;
     if (p.mgCd <= 0) {
       p.mgCd = g.rate * RATE_MULT ** p.rate;
       for (const [da, off] of g.shots) {
-        const a = p.a + da, id = this.nid++;
+        const a = aim + da, id = this.nid++;
         this.bullets.set(id, { id, kind: g.big ? B.big : B.mg, dmg: g.dmg, owner: p.slot,
           x: p.x + ca * 13 + nx * off, y: p.y + sa * 13 + ny * off,
           vx: Math.cos(a) * BULLET_SPEED, vy: Math.sin(a) * BULLET_SPEED, life: BULLET_RANGE / BULLET_SPEED });

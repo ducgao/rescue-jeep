@@ -40,8 +40,10 @@
   #toast { position:fixed; left:50%; top:calc(env(safe-area-inset-top) + 64px); transform:translateX(-50%); z-index:6; background:var(--panel);
     border:2px solid var(--line); padding:8px 14px; border-radius:4px; font-size:13px; font-weight:700; opacity:0; transition:opacity .25s; pointer-events:none; white-space:nowrap; }
   #toast.on { opacity:1; }
-  #mute { position:fixed; right:calc(env(safe-area-inset-right) + 10px); top:calc(env(safe-area-inset-top) + 10px); z-index:7; width:40px; height:40px;
+  #mute, #fs { position:fixed; right:calc(env(safe-area-inset-right) + 10px); top:calc(env(safe-area-inset-top) + 10px); z-index:7; width:40px; height:40px;
     padding:0; font-size:18px; background:rgba(0,0,0,.4); color:var(--ink); box-shadow:none; border:1px solid var(--line); }
+  #fs { top:calc(env(safe-area-inset-top) + 58px); }
+  #fs[hidden] { display:none; }
   .skins { display:grid; grid-template-columns:auto 1fr 1fr; align-items:center; gap:6px; margin:0 0 10px; }
   .skins span { color:var(--muted); font-size:13px; grid-row:span 2; text-align:left; }
   .skins button { padding:7px 6px; font-size:13px; background:transparent; color:var(--muted);
@@ -95,6 +97,7 @@
     <button type="button" data-skin="doodle" aria-pressed="false">Vẽ tay</button>
   </div>
   <label class="tutrow"><input type="checkbox" id="tut" checked> Chơi màn tập lái trước</label>
+  <label class="tutrow"><input type="checkbox" id="aim" checked> Tự ngắm bắn (dễ hơn)</label>
   <button id="play">CHƠI</button>
   <div id="err"></div>
   </div>
@@ -131,6 +134,7 @@
   <div class="row"><button id="lifeYes">CHO</button><button id="lifeNo" class="ghost">KHÔNG</button></div></div>
 <div id="rotate"><div class="phone"></div><b>Xoay ngang điện thoại để chơi</b><span style="color:var(--muted);font-size:13px">Game chơi ở màn hình ngang</span></div>
 <button id="mute" aria-label="Âm thanh">♪</button>
+<button id="fs" aria-label="Toàn màn hình">⛶</button>
 <script type="importmap">{ "imports": { "three": "/vendor/three.module.js" } }</script>
 <script type="module" src="/js/main.js"></script>
 </body>
