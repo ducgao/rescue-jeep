@@ -10,8 +10,8 @@ import { T, B, HARD, TYPE_NAME, footprint, distToEntity, isBossType } from '../s
 import { botInput } from './bot.js';
 
 let ROOM_SEQ = 1;
-// join message `aim`: 0/1/2, or legacy true/false
-const aimModeOf = v => v === false || v === 0 ? AIM_OFF : v === 1 ? AIM_CONE : AIM_FULL;
+// join message `aim`: 0 = manual, anything else = assist (full auto is reserved for the bot)
+const aimModeOf = v => v === false || v === 0 ? AIM_OFF : AIM_CONE;
 const devEnv = k => (typeof process !== 'undefined' && process.env ? process.env[k] : undefined);
 
 export class Room {

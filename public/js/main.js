@@ -150,9 +150,8 @@ $('lifeNo').onclick = e => { e.stopPropagation(); send({ t: 'lifeAns', yes: 0 })
 if ($('tut')) $('tut').checked = store.get('rj_tut_done') !== '1';
 // aim mode: 0 manual, 1 assist (cone ahead), 2 full auto
 const AIM_HINT = ['Đạn bay thẳng theo đầu xe, giữ nửa phải để bắn',
-  'Tự bắn mục tiêu trong góc ~60° trước đầu xe',
-  'Tự bắn mục tiêu gần nhất mọi hướng (dễ nhất)'];
-let aimMode = [0, 1, 2].includes(+store.get('rj_aim_mode')) && store.get('rj_aim_mode') !== null ? +store.get('rj_aim_mode') : 1;
+  'Tự bắn mục tiêu trong góc 30° trước đầu xe'];
+let aimMode = store.get('rj_aim_mode') === '0' ? 0 : 1;
 function setAim(m) {
   aimMode = m; store.set('rj_aim_mode', String(m));
   for (const b of document.querySelectorAll('[data-aim]')) b.setAttribute('aria-pressed', +b.dataset.aim === m ? 'true' : 'false');
@@ -171,9 +170,16 @@ const fsEl = () => document.fullscreenElement || document.webkitFullscreenElemen
 const fsOk = !!(docEl.requestFullscreen || docEl.webkitRequestFullscreen) && (document.fullscreenEnabled || document.webkitFullscreenEnabled);
 const paintFs = () => { fsBtn.textContent = fsEl() ? '⤡' : '⛶'; fsBtn.setAttribute('aria-label', fsEl() ? 'Thoát toàn màn hình' : 'Toàn màn hình'); };
 if (fsBtn) {
-  fsBtn.hidden = !fsOk; paintFs();
+  paintFs();
+  const iOS = /iP(hone|od|ad)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   fsBtn.onclick = async e => {
     e.stopPropagation();
+    if (!fsOk) {
+      toast(iOS ? 'iPhone: bấm Chia sẻ → Thêm vào MH chính, rồi mở game từ icon để chơi toàn màn hình'
+        : window.top !== window ? 'Khung xem trước chặn toàn màn hình — mở link game trực tiếp để dùng'
+        : 'Trình duyệt này không hỗ trợ toàn màn hình', 4500);
+      return;
+    }
     try {
       if (fsEl()) await (document.exitFullscreen || document.webkitExitFullscreen).call(document);
       else {
@@ -582,9 +588,7 @@ function drawControls(now) {
 function tutLines(step, sub) {
   if (step === 0) return ['BÀI 1/3 · LÁI XE', 'Kéo ngón tay ở NỬA TRÁI màn hình để lái', `Chạy tới vòng sáng (${sub + 1}/3)`];
   if (step === 1) return autoAim()
-    ? (aimMode === 1
-      ? ['BÀI 2/3 · BẮN', 'HỖ TRỢ NGẮM: xe tự bắn mục tiêu TRƯỚC ĐẦU XE', `Quay đầu xe về phía mục tiêu và lại gần (${sub + 1}/3)`]
-      : ['BÀI 2/3 · BẮN', 'TỰ NGẮM: xe tự bắn mục tiêu gần nhất', `Lái lại gần mục tiêu. Giữ NỬA PHẢI để bắn thẳng đầu xe (${sub + 1}/3)`])
+    ? ['BÀI 2/3 · BẮN', 'HỖ TRỢ NGẮM: xe tự bắn mục tiêu NGAY TRƯỚC ĐẦU XE', `Quay đầu xe chĩa vào mục tiêu và lại gần (${sub + 1}/3)`]
     : ['BÀI 2/3 · BẮN', 'Đạn bay THẲNG THEO HƯỚNG ĐẦU XE', `Quay đầu xe về mục tiêu, rồi giữ NỬA PHẢI để bắn (${sub + 1}/3)`];
   if (step === 2) return ['BÀI 3/3 · CỨU TÙ BINH', ['Bắn sập trại giam', 'Lái xe chạm vào tù binh để đón', 'Chở tù binh về bãi trực thăng (chữ H)'][sub] || '', 'Cứu đủ 5 người = +1 cấp đạn'];
   return ['HOÀN THÀNH!', 'Bạn đã sẵn sàng', 'Vào trận thật…'];
