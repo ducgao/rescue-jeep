@@ -196,7 +196,7 @@ muteBtn.onclick = e => { e.stopPropagation(); setMuted(!isMuted()); store.set('r
 // ---------------- network ----------------
 let ws = null, state = 'menu';
 let you = 0, roster = [], snaps = [], latest = null, timeOffset = null;
-let seq = 0, pending = [], pred = null, predErr = { x: 0, y: 0 }, wasAlive = true;
+let seq = 0, pending = [], pred = null, predErr = { x: 0, y: 0 }, wasAlive = true, coneFrom = 0;
 let evq = [], padAnim = {}, shake = 0, lastMgSfx = 0, seenBullets = new Set(), banner = null, curStage = -1, flashT = 0;
 const ITEM_NAME = { [ITEM.rapid]: 'BẮN NHANH', [ITEM.shield]: 'KHIÊN', [ITEM.life]: '+1 MẠNG', [ITEM.bomb]: 'BOM!', [ITEM.wup]: 'VŨ KHÍ +' };
 function switchStage(i) { setStage(i); R.resetTerrain(); curStage = i; }
@@ -277,7 +277,7 @@ function onSnap(s) {
   // reconcile own jeep
   const me = s.p[you];
   if (!me[3]) { pred = { x: me[0], y: me[1], a: me[2] }; pending = []; wasAlive = false; return; }
-  if (!pred || !wasAlive) { pred = { x: me[0], y: me[1], a: me[2] }; pending = []; predErr = { x: 0, y: 0 }; wasAlive = true; return; }
+  if (!pred || !wasAlive) { pred = { x: me[0], y: me[1], a: me[2] }; pending = []; predErr = { x: 0, y: 0 }; wasAlive = true; coneFrom = performance.now(); return; }
   pending = pending.filter(i => i.seq > s.ack[you]);
   const p = { x: me[0], y: me[1], a: pred.a };
   const blk = blockersFrom(s);
@@ -593,9 +593,16 @@ function tutLines(step, sub) {
   if (step === 2) return ['BÀI 3/3 · CỨU TÙ BINH', ['Bắn sập trại giam', 'Lái xe chạm vào tù binh để đón', 'Chở tù binh về bãi trực thăng (chữ H)'][sub] || '', 'Cứu đủ 5 người = +1 cấp đạn'];
   return ['HOÀN THÀNH!', 'Bạn đã sẵn sàng', 'Vào trận thật…'];
 }
-// assist mode: faint wedge in front of the jeep showing where auto-aim reaches
-function drawAimCone() {
+// assist mode: faint wedge in front of the jeep showing where auto-aim reaches.
+// Always on in the training yard; otherwise 5 s after entering a stage or respawning, then blinks out.
+const CONE_SHOW = 5000, CONE_BLINK = 1500;
+function drawAimCone(now) {
   if (aimMode !== 1 || !pred || !latest || latest.ph) return;
+  if (!latest.tu) {
+    const t = now - coneFrom;
+    if (t > CONE_SHOW + CONE_BLINK) return;
+    if (t > CONE_SHOW && Math.floor((t - CONE_SHOW) / 180) % 2) return;
+  }
   const me = latest.p[you]; if (!me || !me[3]) return;
   const d = L.dpr, c = ctx, s = L.s, cam = latest.cam;
   const x = (L.ox + pred.x * s) * d, y = (L.oy + (pred.y - cam) * s) * d, r = AUTO_AIM_RANGE * s * d, a = pred.a;
@@ -695,7 +702,7 @@ function frame(now) {
   ctx.drawImage(buf, Math.round((L.ox + sx * L.s) * L.dpr), Math.round((L.oy + sy * L.s) * L.dpr), Math.round(L.gw * L.dpr), Math.round(L.gh * L.dpr));
   ctx.strokeStyle = '#2a2e20'; ctx.lineWidth = 2 * L.dpr;
   ctx.strokeRect(L.ox * L.dpr, L.oy * L.dpr, L.gw * L.dpr, L.gh * L.dpr);
-  if (S) { drawAimCone(); drawHud(S, now); drawControls(now); drawTutorial(now); }
+  if (S) { drawAimCone(now); drawHud(S, now); drawControls(now); drawTutorial(now); }
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
